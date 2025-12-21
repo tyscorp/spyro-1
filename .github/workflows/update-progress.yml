@@ -1,0 +1,53 @@
+name: Update Progress Chart
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'progress.md'
+      - 'src/**'
+      - 'asm/**'
+      - 'include/**'
+      - 'Makefile'
+      - 'psx.ld'
+
+jobs:
+  update-progress:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history needed for git log in progress.py
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build project to generate psx.map
+        run: |
+          docker build -t spyro-build .
+          docker run --rm -v "${{ github.workspace }}:/s1" spyro-build make
+
+      - name: Generate progress chart
+        run: |
+          docker run --rm -v "${{ github.workspace }}:/s1" spyro-build python3 progress.py
+
+      - name: Check for changes
+        id: check_changes
+        run: |
+          if git diff --quiet .github/assets/progress.png 2>/dev/null; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "No changes to progress.png"
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "progress.png has changed"
+          fi
+
+      - name: Commit and push
+        if: steps.check_changes.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/assets/progress.png
+          git commit -m "Updated progress.png"
+          git push
